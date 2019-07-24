@@ -67,7 +67,7 @@ ClientHandler client_init(ClientConfig * config)
 
 void client_deinit(ClientHandler handler)
 {
-    client_disconnect(handler);
+    client_disconnect (handler);
     free (handler);
 }
 
@@ -89,7 +89,7 @@ uint16_t client_list_servers(
     {
         return 0;
     }
-    bzero ((char *) &addr, sizeof(addr));
+    memset (&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = inet_addr ((const char *) handler->ip);
     addr.sin_port = htons (handler->port);
@@ -116,12 +116,12 @@ uint16_t client_list_servers(
     while (handler->detected_servers_count < nrMaximServere)
     {
         int bytesRcvd = recvfrom (
-                                  sock,
-                                      (void *) message,
-                                      sizeof(message),
-                                      (int) 0,
-                                      (struct sockaddr *) &addr,
-                                      (unsigned int *) &addrlen);
+            sock,
+            (void *) message,
+            sizeof(message),
+            (int) 0,
+            (struct sockaddr *) &addr,
+            (unsigned int *) &addrlen);
 
         if (bytesRcvd < 0)
         {
@@ -143,18 +143,18 @@ uint16_t client_list_servers(
         servers[handler->detected_servers_count].ID = handler->detected_servers_count;
         memcpy (servers[handler->detected_servers_count].name, message, 20);
         memcpy (
-                &handler->detected_servers[handler->detected_servers_count].port,
-                    &message[20],
-                    sizeof(handler->detected_servers[handler->detected_servers_count].port));
+            &handler->detected_servers[handler->detected_servers_count].port,
+            &message[20],
+            sizeof(handler->detected_servers[handler->detected_servers_count].port));
 
         handler->detected_servers[handler->detected_servers_count].ip = addr.sin_addr.s_addr;
-        handler->detected_servers[handler->detected_servers_count].port =
-            ntohs (handler->detected_servers[handler->detected_servers_count].port);
+        handler->detected_servers[handler->detected_servers_count].port = ntohs (
+            handler->detected_servers[handler->detected_servers_count].port);
 
         printf (
-                "Server detected: %s %d\n",
-                    servers[handler->detected_servers_count].name,
-                    handler->detected_servers[handler->detected_servers_count].port);
+            "Server detected: %s %d\n",
+            servers[handler->detected_servers_count].name,
+            handler->detected_servers[handler->detected_servers_count].port);
 
         ++handler->detected_servers_count;
     }
@@ -208,9 +208,9 @@ Status client_connect(ClientHandler param, ServerId id)
         ra.sin_port = handler->detected_servers[id].port;
 
         int err = connect (
-                           handler->socket_fd,
-                               (__CONST_SOCKADDR_ARG) &ra,
-                               sizeof(struct sockaddr_in));
+            handler->socket_fd,
+            (__CONST_SOCKADDR_ARG) &ra,
+            sizeof(struct sockaddr_in));
         if (err)
         {
             client_disconnect (handler);
@@ -218,8 +218,7 @@ Status client_connect(ClientHandler param, ServerId id)
         }
 
         if (pthread_create (&handler->receive_thread,
-        NULL,
-                            recive_thread, handler))
+        NULL, recive_thread, handler))
         {
             client_disconnect (handler);
             return E_CONNECTION_FAILURE;

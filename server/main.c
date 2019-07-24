@@ -31,23 +31,23 @@ void client_disconnected_cb(ServerHandler handler, ClientId clientId)
 void error_cb(ServerHandler handler, ServerErrorCode errorCB)
 {
     perror ("Server error");
-    exit(1);
+    exit (1);
 }
 
 int main(void)
 {
     ServerConfig srvConfig;
 
-    memcpy (srvConfig.ip,   "224.0.0.26",  sizeof(srvConfig.ip));
+    memcpy (srvConfig.ip, "224.0.0.26", sizeof(srvConfig.ip));
     memcpy (srvConfig.name, "SuperServer", sizeof(srvConfig.name));
 
-    srvConfig.advertise_port         = 6000;
-    srvConfig.game_port              = 6001;
-    srvConfig.client_connected_cb    = client_connected_cb;
+    srvConfig.advertise_port = 6000;
+    srvConfig.game_port = 6001;
+    srvConfig.client_connected_cb = client_connected_cb;
     srvConfig.client_disconnected_cb = client_disconnected_cb;
-    srvConfig.receive_cb             = recive_data_cb;
-    srvConfig.error_cb               = error_cb;
-    srvConfig.max_nb_clients         = 10;
+    srvConfig.receive_cb = recive_data_cb;
+    srvConfig.error_cb = error_cb;
+    srvConfig.max_nb_clients = 10;
 
     ServerHandler handler = server_init (&srvConfig);
 

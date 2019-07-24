@@ -67,12 +67,12 @@ void *advertise_thread(void *param)
     {
         char incoming[sizeof(message)];
         int bytesTransfered = recvfrom (
-                                        instance->advertise_fd,
-                                            incoming,
-                                            sizeof(incoming),
-                                            0,
-                                            (struct sockaddr *) &addr,
-                                            &addrlen);
+            instance->advertise_fd,
+            incoming,
+            sizeof(incoming),
+            0,
+            (struct sockaddr *) &addr,
+            &addrlen);
 
         if (bytesTransfered < 0)
         {
@@ -93,12 +93,12 @@ void *advertise_thread(void *param)
         }
 
         bytesTransfered = sendto (
-                                  instance->advertise_fd,
-                                      message,
-                                      sizeof(message),
-                                      0,
-                                      (struct sockaddr *) &addr,
-                                      addrlen);
+            instance->advertise_fd,
+            message,
+            sizeof(message),
+            0,
+            (struct sockaddr *) &addr,
+            addrlen);
 
         if (bytesTransfered < 0)
         {
@@ -138,10 +138,10 @@ void *client_thread(void *param)
         if (clientData->handler->config.receive_cb != NULL)
         {
             clientData->handler->config.receive_cb (
-                                                    clientData->handler,
-                                                        clientData->id,
-                                                        message,
-                                                        bytesRcvd);
+                clientData->handler,
+                clientData->id,
+                message,
+                bytesRcvd);
         }
     }
 
@@ -206,9 +206,9 @@ void *game_thread(void *param)
         }
 
         instance->clientData[clientId].socket_fd = accept (
-                                                           instance->game_fd,
-                                                               (struct sockaddr*) &isa,
-                                                               &addr_size);
+            instance->game_fd,
+            (struct sockaddr*) &isa,
+            &addr_size);
         instance->clientData[clientId].handler = instance;
         instance->clientData[clientId].id = clientId;
 
@@ -229,11 +229,8 @@ void *game_thread(void *param)
             break;
         }
 
-        if (pthread_create (
-            &instance->clientData[clientId].client_thread,
-            NULL,
-            client_thread,
-            &instance->clientData[clientId]))
+        if (pthread_create (&instance->clientData[clientId].client_thread,
+        NULL, client_thread, &instance->clientData[clientId]))
         {
             server_fatal_error (instance, E_STARTING_THREAD);
             return NULL;
@@ -289,7 +286,7 @@ ServerHandler server_init(ServerConfig *config)
     }
 
     struct sockaddr_in addr;
-    bzero ((char *) &addr, sizeof(addr));
+    memset (&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl (INADDR_ANY);
     addr.sin_port = htons (config->advertise_port);
