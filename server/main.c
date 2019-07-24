@@ -5,62 +5,66 @@
 
 #include "server.h"
 
-volatile int clientsCount  = 0;
+volatile int clientsCount = 0;
 ClientId availableClientId = 0;
 
-void recive_data_cb(
-		ServerHandler handler, 
-		ClientId clientId,
-		char *buffer,
-		int size)
+void recive_data_cb(ServerHandler handler, ClientId clientId, void *buffer, ssize_t size)
 {
-	printf("Recived %d bytes from %d: %s\n", size, clientId, buffer);
+    printf ("Recived %d bytes from %d: %s\n", (int) size, clientId, (char *) buffer);
 
-	server_send_message(handler, "Salut", sizeof("Salut"));
+    server_send_message (handler, "Salut", sizeof("Salut"));
 }
 
-void client_connected_cb(ClientInfo clientInfo)
+void client_connected_cb(ServerHandler handler, ClientId clientId)
 {
-	printf("Client %d connected: %s\n", clientInfo.ID, clientInfo.name);
-	++clientsCount;
-	availableClientId = clientInfo.ID;
+    printf ("Client %d connected\n", clientId);
+    ++clientsCount;
+    availableClientId = clientId;
 }
 
-void client_disconnected_cb(ClientInfo clientInfo)
+void client_disconnected_cb(ServerHandler handler, ClientId clientId)
 {
-	printf("Client %d disconnected: %s\n", clientInfo.ID, clientInfo.name);
-	--clientsCount;
+    printf ("Client %d disconnected\n", clientId);
+    --clientsCount;
 }
 
-int main(void) {
+void error_cb(ServerHandler handler, ServerErrorCode errorCB)
+{
+    perror ("Server error");
+    exit(1);
+}
 
-	ServerConfig srvConfig;
+int main(void)
+{
+    ServerConfig srvConfig;
 
-	memcpy(srvConfig.ip, "224.0.0.26", sizeof(srvConfig.ip));
-	memcpy(srvConfig.name, "SuperServer", sizeof(srvConfig.name));
+    memcpy (srvConfig.ip,   "224.0.0.26",  sizeof(srvConfig.ip));
+    memcpy (srvConfig.name, "SuperServer", sizeof(srvConfig.name));
 
-	srvConfig.advertisePort = 6000;
-	srvConfig.gamePort      = 6001;
-	srvConfig.clientConnectedCallback = client_connected_cb;
-	srvConfig.clientDisconnectedCallback = client_disconnected_cb;
-	srvConfig.receiveCallback = recive_data_cb;
+    srvConfig.advertise_port         = 6000;
+    srvConfig.game_port              = 6001;
+    srvConfig.client_connected_cb    = client_connected_cb;
+    srvConfig.client_disconnected_cb = client_disconnected_cb;
+    srvConfig.receive_cb             = recive_data_cb;
+    srvConfig.error_cb               = error_cb;
+    srvConfig.max_nb_clients         = 10;
 
-	ServerHandler handler = server_init(&srvConfig);
+    ServerHandler handler = server_init (&srvConfig);
 
-	while (clientsCount == 0)
-	{
-		// Wait for at least one client to appear.
-		sleep(1);
-	}
+    while (clientsCount == 0)
+    {
+        // Wait for at least one client to appear.
+        sleep (1);
+    }
 
-	server_stop_advertising(handler);
+    server_stop_advertising (handler);
 
-	server_send_message(handler, "Salut", sizeof("Salut"));
+    server_send_message (handler, "Salut", sizeof("Salut"));
 
-	//wait 10 seconds and exit.
-	sleep(10);
+    //wait 10 seconds and exit.
+    sleep (10);
 
-	server_deinit(handler);
+    server_deinit (handler);
 
-	return 0;
+    return 0;
 }
