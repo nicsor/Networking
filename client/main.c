@@ -10,6 +10,12 @@ void recive_data_cb(ClientHandler handler, char *buffer, int size)
     printf ("Recived %d bytes from server: %s\n", size, buffer);
 }
 
+void error_cb(ClientHandler handler)
+{
+    perror ("Client error");
+    exit (1);
+}
+
 int main(void)
 {
     ClientConfig clientConfig;
@@ -18,34 +24,32 @@ int main(void)
 
     clientConfig.max_nb_servers = 5;
     clientConfig.port = 6000;
-    clientConfig.receiveCallback = recive_data_cb;
+    clientConfig.receive_cb = recive_data_cb;
 
-    ServerInfo servers[10];
+    ServerDetails servers[10];
     ClientHandler handler = client_init (&clientConfig);
 
-    int count = client_list_servers (handler, servers, 10, 3);
+    int count = client_list_servers (handler, servers, 10, 500);
 
     if (count > 0)
     {
         printf ("Server found. Connecting to %s\n", servers[0].name);
 
-        client_connect (handler, servers[0].ID);
+        client_connect (handler, servers[0].id);
 
         printf ("Sending message to server\n");
         client_send_message (handler, "Ana are mere", 10);
 
         //wait 10 seconds and exit.
-        sleep (10);
+        sleep (5);
 
-        printf ("Disconecting\n");
+        printf ("Disconnecting\n");
         client_disconnect (handler);
     }
     else
     {
         printf ("No servers found\n");
     }
-
-    printf ("Uninitializing client\n");
 
     return EXIT_SUCCESS;
 }

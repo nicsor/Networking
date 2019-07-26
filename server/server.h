@@ -1,5 +1,7 @@
-#ifndef SERVER_H_
-#define SERVER_H_
+#ifndef NETWORKING_SERVER_H_
+#define NETWORKING_SERVER_H_
+
+#include "client_server_cfg.h"
 
 #include <stdint.h>
 #include <sys/types.h>
@@ -10,36 +12,16 @@ extern "C"
 {
 #endif
 
-#define MAX_NAME_LEN 64
-
-    typedef enum
-    {
-        E_OK,                 ///< Status OK
-        E_CONNECTION_FAILURE, ///< Failure on connection
-        E_NOT_MANAGED,        ///< Unmanaged client
-        E_NOT_INITIALIZED,    ///< Not initialized
-        E_FATAL_EXCEPTION     ///< Fatal exception
-    } Status;
-
-    typedef enum
-    {
-        E_ALLOCATING_MEM,   ///< Error allocating memory
-        E_OPENING_SOCKET,   ///< Error opening socket
-        E_STARTING_THREAD,  ///< Error starting thread
-        E_JOINING_THREAD,   ///< Error joining thread
-        E_ADVERTISE_FAILURE ///< Error on advertise
-    } ServerErrorCode;
-
     typedef void * ServerHandler;
     typedef uint32_t ClientId;
 
     /**
-     * Callback prototype for reciving data.
+     * Callback prototype for receiving data.
      *
      * @param[in] handler    Reference to sever instance.
-     * @param[in] clientId   Id of client from which data was recived
+     * @param[in] clientId   Id of client from which data was received
      * @param[in] buffer     Reference to received data
-     * @param[in] size       Size of data recived
+     * @param[in] size       Size of data received
      */
     typedef void (*notify_cb_recive)(
         ServerHandler handler,
@@ -56,28 +38,30 @@ extern "C"
     typedef void (*notify_cb_client)(ServerHandler handler, ClientId clientId);
 
     /**
-     * Callback prototype for server error
+     * Callback prototype for server error.
+     * The provided handler is offered as information on the failed instance.
+     * No more actions should be performed on it. Resources are automatically
+     * freed upon callback exit.
      *
      * @param[in] handler    Reference to sever instance.
-     * @param[in] clientInfo Client details
      */
-    typedef void (*notify_cb_error)(ServerHandler handler, ServerErrorCode clientId);
+    typedef void (*notify_cb_error)(ServerHandler handler);
 
     typedef struct
     {
             char * ip[16];           ///< Multicast address on which to advertise
             uint16_t advertise_port; ///< Advertising port
-            uint16_t game_port;      ///< Game port
+            uint16_t game_port;      ///< Server listening port
             uint16_t max_nb_clients; ///< Max accepted clients
             char name[MAX_NAME_LEN]; ///< Server name
-            notify_cb_client client_connected_cb;    ///< Callback on new client
-            notify_cb_client client_disconnected_cb; ///< Callback on disconnected client
-            notify_cb_recive receive_cb;             ///< Callback on data received
-            notify_cb_error error_cb;               ///< Callback on error
+            notify_cb_client client_connected_cb;    ///< Handler to callback on new client
+            notify_cb_client client_disconnected_cb; ///< Handler to callback on client disconnect
+            notify_cb_recive receive_cb;             ///< Handler to callback on data received
+            notify_cb_error error_cb;                ///< Handler to callback on error
     } ServerConfig;
 
     /**
-     * Starts a new advertising server based on the provided config
+     * Starts a new advertising server based on the provided configuration.
      *
      * @param[in] config Reference to server configuration
      */
@@ -93,9 +77,17 @@ extern "C"
     /**
      * Stops advertising presence and stops accepting new clients
      *
-     * @param[in] handler Refrence to sever instance.
+     * @param[in] handler Reference to sever instance.
      */
     Status server_stop_advertising(ServerHandler handler);
+
+    /**
+     * Remove client
+     *
+     * @param[in] handler  Reference to server instance.
+     * @param[in] clientId Id of the client to be removed
+     */
+    Status server_remove_client(ServerHandler handler, ClientId clientId);
 
     /**
      * Send message to all connected clients
@@ -124,4 +116,4 @@ extern "C"
 }
 #endif
 
-#endif /* SERVER_H_*/
+#endif /* NETWORKING_SERVER_H_*/

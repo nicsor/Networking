@@ -4,33 +4,32 @@
 #include <stdlib.h>
 #include <pthread.h>
 
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <time.h>
 #include <errno.h>
-#include <stdio.h>
-#include <unistd.h>
 
+#ifdef ENABLE_DEBUG
+#include <stdio.h>
+#define DEBUG(...) fprintf (stderr, __VA_ARGS__)
+#else
+#define DEBUG(...)
+#endif
+
+/** Server information */
 typedef struct
 {
-    in_addr_t ip;
-    uint16_t port;
+    in_addr_t ip;   ///< Address of server
+    uint16_t port;  ///< Port on which the server is listening
 } Server_t;
 
+/* Client information */
 typedef struct
 {
-    char * ip[16];
-    uint16_t port;
-    uint16_t max_nb_servers;
-    Status status;
-    int socket_fd;
-    notify_cb receive_cb;
-    notify_cb_error error_cb;
-    pthread_t receive_thread;
-    Server_t *detected_servers;
-    int detected_servers_count;
+    ClientConfig config;        ///< Client configuration
+    int socket_fd;              ///< Connection file descriptor
+    Server_t *detected_servers; ///< List of detected servers
+    int detected_servers_count; ///< Detected servers count
 } ClientInfo;
 
 typedef ClientInfo * ClientHandler_t;
@@ -38,20 +37,14 @@ typedef ClientInfo * ClientHandler_t;
 ClientHandler client_init(ClientConfig * config)
 {
     ClientHandler_t handler = (ClientHandler_t) malloc (sizeof(ClientInfo));
-    memset (handler, 0, sizeof(ClientInfo));
+    ssize_t sizeofServerData = sizeof(Server_t) * config->max_nb_servers;
 
     if (handler == NULL)
     {
         return NULL;
     }
 
-    memcpy (handler->ip, config->ip, sizeof(handler->ip));
-    handler->port = config->port;
-    handler->status = 0;
-    handler->receive_cb = config->receiveCallback;
-    handler->max_nb_servers = config->max_nb_servers;
-
-    ssize_t sizeofServerData = sizeof(Server_t) * handler->max_nb_servers;
+    bzero (handler, sizeof(ClientInfo));
     handler->detected_servers = (Server_t*) malloc (sizeofServerData);
 
     if (handler->detected_servers == NULL)
@@ -60,7 +53,8 @@ ClientHandler client_init(ClientConfig * config)
         return NULL;
     }
 
-    memset (handler->detected_servers, 0, sizeofServerData);
+    bzero (handler->detected_servers, sizeofServerData);
+    handler->config = *config;
 
     return handler;
 }
@@ -73,36 +67,36 @@ void client_deinit(ClientHandler handler)
 
 uint16_t client_list_servers(
     ClientHandler param,
-    ServerInfo *servers,
+    ServerDetails *servers,
     uint16_t maxServerCount,
-    uint16_t timeoutSec)
+    uint16_t timeoutMs)
 {
     ClientHandler_t handler = (ClientHandler_t) param;
 
-    struct sockaddr_in addr;
-    int addrlen, sock, status;
-    char message[200];
+    struct sockaddr_in addr = {0};
+    unsigned int addrlen = sizeof(addr);
+    int sock, status;
+    char message[1024] = {0};
 
     /* set up socket */
     sock = socket (AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0)
+    if (sock == -1)
     {
         return 0;
     }
-    memset (&addr, 0, sizeof(addr));
+
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr ((const char *) handler->ip);
-    addr.sin_port = htons (handler->port);
-    addrlen = sizeof(addr);
+    addr.sin_addr.s_addr = inet_addr ((const char *) handler->config.ip);
+    addr.sin_port = htons (handler->config.port);
 
     struct timeval tv;
-    tv.tv_sec = timeoutSec;
-    tv.tv_usec = 0;
+    tv.tv_sec = 0;
+    tv.tv_usec = timeoutMs * 1000;
     setsockopt (sock, SOL_SOCKET, SO_RCVTIMEO, (const char*) &tv, sizeof(tv));
 
-    status = sendto (sock, message, sizeof(message), 0, (struct sockaddr *) &addr, addrlen);
+    status = sendto (sock, ADVERTISING_REQUEST, sizeof(ADVERTISING_REQUEST), 0, (struct sockaddr *) &addr, sizeof(addr));
 
-    if (status < 0)
+    if (status == -1)
     {
         close (sock);
         return 0;
@@ -110,10 +104,11 @@ uint16_t client_list_servers(
 
     handler->detected_servers_count = 0;
 
-    int nrMaximServere =
-        (maxServerCount > handler->max_nb_servers) ? handler->max_nb_servers : maxServerCount;
+    int nbMaxServers =
+        (maxServerCount > handler->config.max_nb_servers) ?
+            handler->config.max_nb_servers : maxServerCount;
 
-    while (handler->detected_servers_count < nrMaximServere)
+    while (handler->detected_servers_count < nbMaxServers)
     {
         int bytesRcvd = recvfrom (
             sock,
@@ -123,40 +118,35 @@ uint16_t client_list_servers(
             (struct sockaddr *) &addr,
             (unsigned int *) &addrlen);
 
-        if (bytesRcvd < 0)
+        if (bytesRcvd <= 0)
         {
-
-            if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
-            {
-                // timeout
-                break;
-            }
-            else
-            {
-                close (sock);
-                return handler->detected_servers_count;
-            }
+            // Timeout or error, exit
+            break;
         }
+        else if ((bytesRcvd >= 6) &&
+            (strncmp(message, ADVERTISING_RESPONSE, sizeof(ADVERTISING_RESPONSE)) == 0))
+        {
+            // Expected response received.
+            int offset = sizeof(ADVERTISING_RESPONSE);
+            Server_t * server = &handler->detected_servers[handler->detected_servers_count];
+            ServerDetails * serverInfo = &servers[handler->detected_servers_count];
+            DEBUG ("Received %d bytes", bytesRcvd);
 
-        printf ("Recived %d bytes", bytesRcvd);
+            int nameLength = bytesRcvd - (offset + 2);
+            int maxlen     = (nameLength > sizeof(serverInfo->name)) ?
+                sizeof(serverInfo->name) : nameLength;
 
-        servers[handler->detected_servers_count].ID = handler->detected_servers_count;
-        memcpy (servers[handler->detected_servers_count].name, message, 20);
-        memcpy (
-            &handler->detected_servers[handler->detected_servers_count].port,
-            &message[20],
-            sizeof(handler->detected_servers[handler->detected_servers_count].port));
+            serverInfo->id = handler->detected_servers_count;
+            memcpy  (&server->port,    &message[offset],   2);
+            strncpy (serverInfo->name, &message[offset+2], maxlen);
 
-        handler->detected_servers[handler->detected_servers_count].ip = addr.sin_addr.s_addr;
-        handler->detected_servers[handler->detected_servers_count].port = ntohs (
-            handler->detected_servers[handler->detected_servers_count].port);
+            server->ip   = addr.sin_addr.s_addr;
+            server->port = ntohs (server->port);
 
-        printf (
-            "Server detected: %s %d\n",
-            servers[handler->detected_servers_count].name,
-            handler->detected_servers[handler->detected_servers_count].port);
+            DEBUG ("Server detected: %s %d\n", serverInfo->name, server->port);
 
-        ++handler->detected_servers_count;
+            ++handler->detected_servers_count;
+        }
     }
 
     close (sock);
@@ -164,88 +154,109 @@ uint16_t client_list_servers(
     return handler->detected_servers_count;
 }
 
-void *recive_thread(void *param)
+void *receive_thread(void *handler)
 {
     char buffer[1024];
-    ClientHandler_t handler = (ClientHandler_t) param;
+    ClientHandler_t instance = (ClientHandler_t) handler;
+
+    pthread_detach(pthread_self());
 
     while (1)
     {
-        int dataLength = recv (handler->socket_fd, buffer, sizeof(buffer), 0);
+        int dataLength = recv (instance->socket_fd, buffer, sizeof(buffer), 0);
 
         if (dataLength <= 0)
         {
+            client_disconnect (instance);
             break;
         }
 
-        handler->receive_cb (handler, buffer, dataLength);
+        instance->config.receive_cb (instance, buffer, dataLength);
     }
 
-    client_disconnect (handler);
-
-    return NULL;
+    pthread_exit(NULL);
 }
 
-Status client_connect(ClientHandler param, ServerId id)
+Status client_connect(ClientHandler handler, ServerId serverId)
 {
-    ClientHandler_t handler = (ClientHandler_t) param;
+    ClientHandler_t instance = (ClientHandler_t) handler;
+    Status status = E_NOT_MANAGED;
 
-    if (id < handler->detected_servers_count)
+    if (serverId < instance->detected_servers_count)
     {
-        struct sockaddr_in ra;
+        struct sockaddr_in sa = {0};
 
-        handler->socket_fd = socket (PF_INET, SOCK_STREAM, 0);
+        instance->socket_fd = socket (PF_INET, SOCK_STREAM, 0);
 
-        if (handler->socket_fd < 0)
+        if (instance->socket_fd != -1)
         {
-            handler->socket_fd = 0;
-            return E_CONNECTION_FAILURE;
+            pthread_t threadId;
+            sa.sin_family = AF_INET;
+            sa.sin_addr.s_addr = instance->detected_servers[serverId].ip;
+            sa.sin_port = instance->detected_servers[serverId].port;
+
+            if (connect (instance->socket_fd, (const struct sockaddr *)&sa, (socklen_t)sizeof(sa)) ||
+                (pthread_create (&threadId, NULL, receive_thread, instance)))
+            {
+                close (instance->socket_fd);
+                instance->socket_fd = 0;
+
+                status = E_NOT_INITIALIZED;
+            }
+            else
+            {
+                DEBUG("Client: State update[Connected to server]\n");
+
+                status = E_OK;
+            }
         }
-
-        memset (&ra, 0, sizeof(struct sockaddr_in));
-        ra.sin_family = AF_INET;
-        ra.sin_addr.s_addr = handler->detected_servers[id].ip;
-        ra.sin_port = handler->detected_servers[id].port;
-
-        int err = connect (
-            handler->socket_fd,
-            (__CONST_SOCKADDR_ARG) &ra,
-            sizeof(struct sockaddr_in));
-        if (err)
+        else
         {
-            client_disconnect (handler);
-            return E_CONNECTION_FAILURE;
-        }
+            instance->socket_fd = 0;
 
-        if (pthread_create (&handler->receive_thread,
-        NULL, recive_thread, handler))
-        {
-            client_disconnect (handler);
-            return E_CONNECTION_FAILURE;
+            status = E_NOT_INITIALIZED;
         }
     }
 
-    return 0;
+    return status;
 }
 
-Status client_disconnect(ClientHandler param)
+Status client_disconnect(ClientHandler handler)
 {
-    ClientHandler_t handler = (ClientHandler_t) param;
+    ClientHandler_t instance = (ClientHandler_t) handler;
+    Status status = E_NOT_INITIALIZED;
 
-    if (handler->socket_fd != 0)
+    if (instance->socket_fd != 0)
     {
-        close (handler->socket_fd);
-        handler->socket_fd = 0;
+        DEBUG("Client: State update[Disconnecting from server]\n");
+
+        shutdown (instance->socket_fd, SHUT_RDWR);
+        instance->socket_fd = 0;
+
+        if (instance->config.disconnect_cb != NULL)
+        {
+            instance->config.disconnect_cb(instance);
+        }
+
+        status = E_OK;
     }
 
-    return 0;
+    return status;
 }
 
-Status client_send_message(ClientHandler param, void * buffer, ssize_t bufferSize)
+Status client_send_message(ClientHandler handler, void * buffer, ssize_t bufferSize)
 {
-    ClientHandler_t handler = (ClientHandler_t) param;
+    ClientHandler_t instance = (ClientHandler_t) handler;
+    Status status = E_NOT_INITIALIZED;
 
-    ssize_t status = send (handler->socket_fd, buffer, bufferSize, 0);
+    if (instance->socket_fd != 0)
+    {
+        DEBUG("Client: State update[Sending message to server]\n");
+
+        ssize_t len = send (instance->socket_fd, buffer, bufferSize, 0);
+
+        status = (len < 0) ? E_ERR_ON_SEND : E_OK;
+    }
 
     return status;
 }

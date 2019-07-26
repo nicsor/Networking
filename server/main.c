@@ -28,7 +28,7 @@ void client_disconnected_cb(ServerHandler handler, ClientId clientId)
     --clientsCount;
 }
 
-void error_cb(ServerHandler handler, ServerErrorCode errorCB)
+void error_cb(ServerHandler handler)
 {
     perror ("Server error");
     exit (1);
@@ -49,7 +49,16 @@ int main(void)
     srvConfig.error_cb = error_cb;
     srvConfig.max_nb_clients = 10;
 
+    printf("Initializing server\n");
     ServerHandler handler = server_init (&srvConfig);
+
+    if (handler == NULL)
+    {
+        printf("Error initializing server\n");
+        return -1;
+    }
+
+    printf("Initialized\n");
 
     while (clientsCount == 0)
     {
@@ -57,13 +66,18 @@ int main(void)
         sleep (1);
     }
 
+    printf("Client connected\n");
     server_stop_advertising (handler);
 
+    printf("Stopped advertising\n");
+
+    printf("Sending message\n");
     server_send_message (handler, "Salut", sizeof("Salut"));
 
-    //wait 10 seconds and exit.
+    printf("Managing incoming data for another 10 seconds\n");
     sleep (10);
 
+    printf("Deinitializing and exiting demo\n");
     server_deinit (handler);
 
     return 0;
